@@ -1,0 +1,53 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Secrets and local env (never commit)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+secrets/
+
+# Data and models (generated locally, repo root only)
+/data/
+/models/
+mlruns/
+*.pkl
+*.parquet
+
+# Logs and runtime
+logs/
+*.log
+.airflow/
+
+# Docker build cache (repo root only, not Dockerfile)
+/docker/
+infra/terraform/generated.env
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+
+# IDE and OS
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# MLflow / DB dumps
+mlflow.db
+*.sqlite
+*.sqlite3
