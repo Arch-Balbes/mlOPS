@@ -20,13 +20,21 @@ MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "eta_delivery")
 MLFLOW_REGISTERED_MODEL = os.getenv("MLFLOW_REGISTERED_MODEL", "eta_model")
 
 MAE_GATE_RATIO = float(os.getenv("MAE_GATE_RATIO", "1.05"))
-CANARY_WEIGHT = float(os.getenv("CANARY_WEIGHT", "0.05"))
+CANARY_WEIGHT = float(os.getenv("CANARY_WEIGHT", "0.33"))
 
-# Public URL for external access (home host IPv6)
-ETA_PUBLIC_BASE_URL = os.getenv(
-    "ETA_PUBLIC_BASE_URL",
-    "http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000",
-)
+
+def localhost_url(port: int, path: str = "") -> str:
+    base = f"http://localhost:{port}"
+    if not path:
+        return base
+    return f"{base}{path}" if path.startswith("/") else f"{base}/{path}"
+
+
+ETA_PUBLIC_BASE_URL = os.getenv("ETA_PUBLIC_BASE_URL", localhost_url(8000))
+MLFLOW_PUBLIC_URL = os.getenv("MLFLOW_PUBLIC_URL", localhost_url(5000))
+PROMETHEUS_PUBLIC_URL = os.getenv("PROMETHEUS_PUBLIC_URL", localhost_url(9090))
+GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", localhost_url(3000))
+AIRFLOW_PUBLIC_URL = os.getenv("AIRFLOW_PUBLIC_URL", localhost_url(8080))
 
 FEATURE_COLUMNS = [
     "distance_km",

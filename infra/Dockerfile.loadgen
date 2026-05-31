@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+
+RUN pip install --no-cache-dir httpx==0.27.0
+
+COPY src/loadgen/runner.py /app/runner.py
+
+ENV ETA_API_URL=http://eta-api:8000
+ENV LOADGEN_INTERVAL_SEC=300
+ENV LOADGEN_JITTER_SEC=60
+ENV LOADGEN_MIN_REQUESTS=1
+ENV LOADGEN_MAX_REQUESTS=5
+
+CMD ["python", "/app/runner.py"]

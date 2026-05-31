@@ -1,0 +1,11 @@
+# ML deps for Airflow DAG. SQLAlchemy <2.0 required by Airflow 2.8.
+sqlalchemy>=1.4.36,<2.0
+numpy>=1.26.0,<2.0
+pandas>=2.1.0,<3.0
+scikit-learn>=1.4.0,<1.6
+lightgbm>=4.3.0
+mlflow==2.11.3
+psycopg2-binary>=2.9.9
+pyarrow>=15.0.0
+python-dotenv>=1.0.0
+email-validator>=2.0.0

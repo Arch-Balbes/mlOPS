@@ -4,92 +4,79 @@ ML-система прогноза времени доставки: ETL -> featu
 
 **Уровень зрелости: 2.** См. [docs/ML_MANIFEST.md](docs/ML_MANIFEST.md).
 
-## Публичный API (IPv6)
+## Доступ к сервисам
 
-Внешний доступ к сервису (домашний хост, глобальный IPv6):
+Все сервисы на **localhost** (в Docker привязаны к `127.0.0.1`). **Извне** доступна только **Grafana** через tunnel4.
 
-| Эндпоинт | URL |
-|----------|-----|
-| Health | http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000/health |
-| Predict | `POST` http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000/predict |
-| Metrics | http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000/metrics |
+| Сервис | URL | Логин |
+|--------|-----|-------|
+| ETA API /health | http://localhost:8000/health | - |
+| ETA Predict | `POST` http://localhost:8000/predict | - |
+| MLflow | http://localhost:5000 | - |
+| Prometheus | http://localhost:9090 | - |
+| Grafana | http://localhost:3000 | без логина |
+| Airflow | http://localhost:8080 | admin / admin |
 
-Подробно: [docs/PUBLIC_ACCESS.md](docs/PUBLIC_ACCESS.md). Переменная: `ETA_PUBLIC_BASE_URL` в [`.env.example`](.env.example).
 
-Проверка:
-
-```powershell
-.\scripts\check_public_health.ps1
-```
-
-## Быстрый старт (локально)
-
-```powershell
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
-
-python -m src.pipeline.run_all
-
-# API: слушать все интерфейсы (нужно для IPv6)
-uvicorn src.serve.app:app --host 0.0.0.0 --port 8000
-```
-
-Пример запроса (localhost):
-
-```powershell
-$body = '{"distance_km":5.2,"hour_of_day":14,"day_of_week":2,"warehouse_id":1,"items_count":3,"payment_type":0,"courier_load":0.4,"weather_code":0}'
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/predict" -Method Post -Body $body -ContentType "application/json"
-```
-
-Публичный IPv6 (тот же body):
-
-```powershell
-Invoke-RestMethod -Uri "http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000/predict" -Method Post -Body $body -ContentType "application/json"
-```
+Grafana снаружи: tunnel4 на порт **3000** → `.\scripts\grafana_tunnel_env.ps1 -TunnelUrl "https://....tunnel4.com" -Recreate`
 
 ## Docker Compose
 
 ```powershell
 cd infra
-docker compose up -d postgres mlflow
-# После train:
-docker compose up -d eta-api prometheus
+docker compose build airflow
+docker compose up -d
 ```
 
-| Сервис | Локально | Публично (только API) |
-|--------|----------|------------------------|
-| API | http://localhost:8000 | http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000 |
-| MLflow | http://localhost:5000 | не публикуется |
-| Prometheus | http://localhost:9090 | не публикуется |
-| Airflow | http://localhost:8080 | не публикуется |
+Первый `build airflow` нужен для установки mlflow/lightgbm в образ Airflow (задача `train_evaluate`).
 
-Если с LTE не открывается Docker по IPv6, запускайте `uvicorn` на хосте (см. PUBLIC_ACCESS.md).
+### Grafana (дашборды по умолчанию)
+
+http://localhost:3000 — **без логина** (учебный стенд).
+
+При входе открывается дашборд **ETA ML - SLI / SLO** (p95/p50 latency, RPS, UP, ошибка модели). Источник данных — Prometheus (`http://prometheus:9090` внутри Docker).
+
+При смене туннеля:
+
+```powershell
+.\scripts\grafana_tunnel_env.ps1 -TunnelUrl "https://ВАШ-ID.tunnel4.com" -Recreate
+```
+
+
+**Автотрафик (опционально):** сервис `eta-loadgen` в compose раз в ~5 минут (±1 мин) шлёт 1–5 случайных `POST /predict` в `eta-api` — метрики в Prometheus обновляются без ручных запросов.
+
+```powershell
+cd infra
+docker compose up -d eta-loadgen
+docker logs -f infra-eta-loadgen-1
+```
+
+Метрики API: `GET http://localhost:8000/metrics` (сырой текст для отладки).
 
 ## Структура
 
 ```
-docs/           ML_MANIFEST, SLI_SLO, MDD_LATENCY, PUBLIC_ACCESS
+docs/           CHEATSHEET, ML_MANIFEST, SLI_SLO, MDD_LATENCY
 src/            etl, features, train, serve, deploy, pipeline
 scripts/        check_public_health.ps1
 dags/           Airflow eta_ml_pipeline
-infra/          docker-compose, prometheus, terraform, sql
+infra/          docker-compose, prometheus, grafana, terraform, sql
 notebooks/      mdd_latency.ipynb
 tests/          pytest smoke
 ```
 
 ## Документация задания
 
-- [Публичный доступ IPv6](docs/PUBLIC_ACCESS.md)
 - [SLI/SLO](docs/SLI_SLO.md)
 - [MDD latency](docs/MDD_LATENCY.md)
 - [ML Manifest](docs/ML_MANIFEST.md)
 
 ## Terraform
 
-```bash
-cd infra/terraform
-terraform init && terraform apply
+```powershell
+cd infra\terraform
+terraform init
+terraform apply
 ```
 
-По умолчанию `eta_api_public_url` указывает на IPv6 API; генерируется `generated.env`.
+Генерируется `generated.env` с localhost URL.

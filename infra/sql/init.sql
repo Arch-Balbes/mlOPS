@@ -1,6 +1,5 @@
 -- ETA ML system schema (feature store + raw tables)
-
-CREATE DATABASE airflow;
+-- Database "airflow" is created in 00-create-airflow-db.sql (Docker init only)
 
 CREATE TABLE IF NOT EXISTS orders (
     order_id VARCHAR(64) PRIMARY KEY,

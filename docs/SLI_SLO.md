@@ -1,11 +1,11 @@
 # SLI / SLO: ETA ML System (Level 2)
 
-**Публичный эндпоинт (IPv6):** `http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000`, см. [PUBLIC_ACCESS.md](PUBLIC_ACCESS.md).
+**API (локально):** `http://localhost:8000` — **Grafana (внешний доступ):** tunnel4 → `localhost:3000`
 
 | Компонент | SLI | SLO | Измерение |
 |-----------|-----|-----|-----------|
 | ETA API | Доля успешных `POST /predict` с HTTP 2xx | >= 99.5% за 30 дней | Prometheus + access logs |
-| ETA API | p95 latency `/predict` | <= 2.5 с за 30 дней | `eta_predict_latency_seconds` histogram |
+| ETA API | p95 latency `/predict` | <= 2.5 с за 30 дней | `eta_predict_latency_seconds` histogram; дашборд Grafana `ETA ML - SLI / SLO` |
 | ETA API | Availability `/health` | >= 99.9% | Blackbox probe каждые 60 с |
 | PostgreSQL / Feature Store | p95 время SELECT фичей по `order_id` | <= 200 мс | App-side timing / pg_stat |
 | MLflow Registry | p95 latency чтения Production версии | <= 1 с | Client metrics при старте API |
@@ -27,7 +27,7 @@
 Новая модель выкатывается при одновременном выполнении:
 
 1. Offline MAE <= baseline * 1.05
-2. Canary 5% трафика 7 дней без роста online MAE > 5%
+2. Canary 33% трафика 7 дней без роста online MAE > 5%
 3. p95 API остается <= 2.5 с
 
 При провале: rollback на `production_backup.pkl` и архив версии в MLflow.

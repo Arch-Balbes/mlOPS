@@ -22,7 +22,7 @@ class ModelRouter:
     def __init__(self) -> None:
         self.production_uri = os.getenv("MODEL_URI", str(MODELS_DIR / "deploy" / "production.pkl"))
         self.canary_uri = os.getenv("CANARY_MODEL_URI", str(MODELS_DIR / "deploy" / "canary.pkl"))
-        self.canary_weight = float(os.getenv("CANARY_WEIGHT", "0.05"))
+        self.canary_weight = float(os.getenv("CANARY_WEIGHT", "0.33"))
         self._prod = None
         self._canary = None
 

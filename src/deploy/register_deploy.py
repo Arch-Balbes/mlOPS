@@ -5,11 +5,21 @@ import argparse
 import json
 import os
 import shutil
+from pathlib import Path
 
 import mlflow
 from mlflow.tracking import MlflowClient
 
 from src.config import MLFLOW_REGISTERED_MODEL, MLFLOW_TRACKING_URI, MODELS_DIR
+
+
+def _safe_copy(src: Path, dst: Path) -> None:
+    """Copy file without metadata (copy2 fails on Docker bind mounts from Windows)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(src, dst)
+    except (PermissionError, OSError):
+        shutil.copyfile(src, dst)
 
 
 def load_train_result() -> dict:
@@ -40,13 +50,12 @@ def promote_to_production(version: str | None = None) -> str:
 
 def deploy_local_canary(canary_weight: float | None = None) -> dict:
     """Copy production model; set canary env metadata for API."""
-    weight = canary_weight if canary_weight is not None else float(os.getenv("CANARY_WEIGHT", "0.05"))
+    weight = canary_weight if canary_weight is not None else float(os.getenv("CANARY_WEIGHT", "0.33"))
     src = MODELS_DIR / "production.pkl"
     prod_path = MODELS_DIR / "deploy" / "production.pkl"
     canary_path = MODELS_DIR / "deploy" / "canary.pkl"
-    prod_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, prod_path)
-    shutil.copy2(src, canary_path)
+    _safe_copy(src, prod_path)
+    _safe_copy(src, canary_path)
 
     meta = {
         "production_model": str(prod_path),
@@ -63,7 +72,7 @@ def rollback() -> dict:
     backup = MODELS_DIR / "deploy" / "production_backup.pkl"
     prod = MODELS_DIR / "deploy" / "production.pkl"
     if backup.exists():
-        shutil.copy2(backup, prod)
+        _safe_copy(backup, prod)
     return {"status": "rolled_back", "production_model": str(prod)}
 
 
@@ -79,8 +88,10 @@ def run(skip_gate: bool = False, promote_mlflow: bool = True) -> dict:
     deploy_dir = MODELS_DIR / "deploy"
     deploy_dir.mkdir(parents=True, exist_ok=True)
     backup = deploy_dir / "production_backup.pkl"
-    if prod_path.exists():
-        shutil.copy2(prod_path, backup)
+    if (deploy_dir / "production.pkl").exists():
+        _safe_copy(deploy_dir / "production.pkl", backup)
+    elif prod_path.exists():
+        _safe_copy(prod_path, backup)
 
     meta = deploy_local_canary()
     out = {"deployed": True, "gate_passed": True, **meta}

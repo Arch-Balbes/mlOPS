@@ -4,10 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import pickle
+import tempfile
 from pathlib import Path
 
 import mlflow
-import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
@@ -97,20 +98,49 @@ def train_models(df: pd.DataFrame) -> tuple[object, str, dict[str, float], dict[
     return best[1], best[0], best[2], baseline_metrics
 
 
+MLFLOW_ARTIFACT_ROOT = "mlflow-artifacts:/"
+
+
+def ensure_mlflow_experiment() -> str:
+    """Use HTTP artifact proxy so Airflow client does not write to local /mlflow."""
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+    name = MLFLOW_EXPERIMENT_NAME
+    exp = client.get_experiment_by_name(name)
+    if exp is None:
+        client.create_experiment(name, artifact_location=MLFLOW_ARTIFACT_ROOT)
+        return name
+    loc = (exp.artifact_location or "").strip()
+    if loc.startswith("mlflow-artifacts"):
+        return name
+    # Legacy file:// experiment cannot be renamed; use a sibling experiment.
+    remote_name = f"{name}_remote"
+    if client.get_experiment_by_name(remote_name) is None:
+        client.create_experiment(remote_name, artifact_location=MLFLOW_ARTIFACT_ROOT)
+    return remote_name
+
+
 def register_model(model, model_name: str, metrics: dict) -> str:
+    """Log metrics and model artifact to remote MLflow server (not local /mlflow)."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+    experiment_name = ensure_mlflow_experiment()
+    mlflow.set_experiment(experiment_name)
+    bundle = {
+        "model": model,
+        "model_name": model_name,
+        "feature_columns": FEATURE_COLUMNS,
+    }
     with mlflow.start_run(run_name=model_name) as run:
         mlflow.log_params({"model_type": model_name})
         mlflow.log_metrics(metrics)
-        if hasattr(model, "predict") and model_name != "baseline_median":
-            mlflow.sklearn.log_model(model, artifact_path="model", registered_model_name=MLFLOW_REGISTERED_MODEL)
-        else:
-            path = MODELS_DIR / "baseline.pkl"
-            MODELS_DIR.mkdir(parents=True, exist_ok=True)
-            with open(path, "wb") as f:
-                pickle.dump(model, f)
-            mlflow.log_artifact(str(path), artifact_path="model")
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "production.pkl"
+            with open(artifact_path, "wb") as f:
+                pickle.dump(bundle, f)
+            mlflow.log_artifact(str(artifact_path), artifact_path="model")
+        try:
+            mlflow.register_model(f"runs:/{run.info.run_id}/model/production.pkl", MLFLOW_REGISTERED_MODEL)
+        except Exception as exc:
+            print(f"MLflow registry skip: {exc}")
         return run.info.run_id
 
 

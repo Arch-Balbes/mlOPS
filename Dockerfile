@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 ENV PYTHONPATH=/opt/eta_ml
 ENV ETA_PROJECT_ROOT=/opt/eta_ml
-ENV ETA_PUBLIC_BASE_URL=http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000
+ENV ETA_PUBLIC_BASE_URL=http://localhost:8000
 
 EXPOSE 8000
 CMD ["uvicorn", "src.serve.app:app", "--host", "0.0.0.0", "--port", "8000"]

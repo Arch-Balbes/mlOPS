@@ -5,11 +5,10 @@ services:
       POSTGRES_USER: eta
       POSTGRES_PASSWORD: eta
       POSTGRES_DB: eta_db
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./sql/00-create-airflow-db.sql:/docker-entrypoint-initdb.d/00-create-airflow-db.sql:ro
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U eta -d eta_db"]
       interval: 5s
@@ -23,9 +22,11 @@ services:
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root /mlflow/artifacts
+      --default-artifact-root mlflow-artifacts:/
+      --artifacts-destination /mlflow/artifacts
+      --serve-artifacts
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - mlflow_data:/mlflow
 
@@ -38,12 +39,10 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MODEL_URI: /opt/eta_ml/models/deploy/production.pkl
       CANARY_MODEL_URI: /opt/eta_ml/models/deploy/canary.pkl
-      CANARY_WEIGHT: "0.05"
-      # Public IPv6 URL (documented in docs/PUBLIC_ACCESS.md)
-      ETA_PUBLIC_BASE_URL: "http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000"
+      CANARY_WEIGHT: "0.33"
+      ETA_PUBLIC_BASE_URL: "http://localhost:8000"
     ports:
-      # Bind 0.0.0.0:8000 on host, reachable via IPv6 [2a00:...]:8000 when firewall allows
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,25 +52,70 @@ services:
   prometheus:
     image: prom/prometheus:v2.50.1
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
       - eta-api
 
+  grafana:
+    image: grafana/grafana:10.4.2
+    # Единственный сервис с доступом с хоста для tunnel4 (tunnel -> localhost:3000)
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_THEME: light
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_UID: eta-ml-overview
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-%(protocol)s://%(domain)s/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      GF_SERVER_ENFORCE_DOMAIN: "false"
+      GF_SECURITY_COOKIE_SAMESITE: ${GRAFANA_COOKIE_SAMESITE:-lax}
+      GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_SECURITY_CSRF_TRUSTED_ORIGINS: ${GRAFANA_CSRF_ORIGINS:-http://localhost:3000}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-true}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_ANONYMOUS_ORG_NAME: Main Org.
+      GF_AUTH_DISABLE_LOGIN_FORM: ${GRAFANA_DISABLE_LOGIN:-true}
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_LOGIN_COOKIE_NAME: grafana_eta_ml
+      GF_SERVER_PROTOCOL: http
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/tunnel.ini:/etc/grafana/conf.d/tunnel.ini:ro
+    depends_on:
+      - prometheus
+
+  # Синтетический трафик /predict для метрик Prometheus (~раз в 5 мин, 1–5 запросов).
+  eta-loadgen:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.loadgen
+    environment:
+      ETA_API_URL: http://eta-api:8000
+      LOADGEN_INTERVAL_SEC: "300"
+      LOADGEN_JITTER_SEC: "60"
+      LOADGEN_MIN_REQUESTS: "1"
+      LOADGEN_MAX_REQUESTS: "5"
+      LOADGEN_INCLUDE_ACTUAL: "true"
+    depends_on:
+      - eta-api
+    restart: unless-stopped
+
   airflow-init:
-    image: apache/airflow:2.8.4-python3.11
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.airflow
+    image: infra-airflow:latest
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://eta:eta@postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       _AIRFLOW_DB_MIGRATE: "true"
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
       ETA_PROJECT_ROOT: /opt/eta_ml
-      DATABASE_URL: postgresql://eta:eta@postgres:5432/eta_db
-      MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ../dags:/opt/airflow/dags
       - ..:/opt/eta_ml
@@ -81,30 +125,40 @@ services:
     entrypoint: /bin/bash
     command:
       - -c
-      - |
-        airflow db migrate
-        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true
+      - airflow db migrate
 
   airflow:
-    image: apache/airflow:2.8.4-python3.11
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.airflow
+    image: infra-airflow:latest
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://eta:eta@postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
       ETA_PROJECT_ROOT: /opt/eta_ml
       PYTHONPATH: /opt/eta_ml
       DATABASE_URL: postgresql://eta:eta@postgres:5432/eta_db
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      GIT_PYTHON_REFRESH: quiet
     volumes:
       - ../dags:/opt/airflow/dags
       - ..:/opt/eta_ml
+      - ../models:/opt/eta_ml/models
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
-      - airflow-init
-      - postgres
-      - mlflow
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    restart: unless-stopped
     command: airflow standalone
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

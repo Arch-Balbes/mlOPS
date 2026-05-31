@@ -1,4 +1,4 @@
-# Optional: deploy env for home host with public IPv6 API
+# Optional: generate local deploy env (localhost URLs)
 
 terraform {
   required_version = ">= 1.5.0"
@@ -17,14 +17,20 @@ variable "project_name" {
 
 variable "compose_host" {
   type        = string
-  description = "Local hostname or LAN IP for Postgres/MLflow (internal)"
+  description = "Host for Docker services on the machine"
   default     = "localhost"
 }
 
-variable "eta_api_public_url" {
+variable "eta_api_url" {
   type        = string
-  description = "Public ETA API URL (IPv6)"
-  default     = "http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000"
+  description = "ETA API URL (local only)"
+  default     = "http://localhost:8000"
+}
+
+variable "grafana_url" {
+  type        = string
+  description = "Grafana URL on host (external access via tunnel4)"
+  default     = "http://localhost:3000"
 }
 
 resource "local_file" "deploy_env" {
@@ -34,22 +40,35 @@ resource "local_file" "deploy_env" {
     COMPOSE_HOST=${var.compose_host}
     DATABASE_URL=postgresql://eta:eta@${var.compose_host}:5432/eta_db
     MLFLOW_TRACKING_URI=http://${var.compose_host}:5000
-    ETA_PUBLIC_BASE_URL=${var.eta_api_public_url}
-    ETA_API_URL=${var.eta_api_public_url}
+    ETA_PUBLIC_BASE_URL=${var.eta_api_url}
+    ETA_API_URL=${var.eta_api_url}
+    MLFLOW_PUBLIC_URL=http://${var.compose_host}:5000
+    PROMETHEUS_PUBLIC_URL=http://${var.compose_host}:9090
+    GRAFANA_PUBLIC_URL=${var.grafana_url}
+    AIRFLOW_PUBLIC_URL=http://${var.compose_host}:8080
   EOT
 }
 
-output "eta_api_public_url" {
-  value       = var.eta_api_public_url
-  description = "Public IPv6 ETA API"
+output "eta_api_url" {
+  value       = var.eta_api_url
+  description = "ETA API (localhost)"
 }
 
 output "eta_api_health_url" {
-  value = "${var.eta_api_public_url}/health"
+  value = "${var.eta_api_url}/health"
+}
+
+output "grafana_url" {
+  value       = var.grafana_url
+  description = "Grafana on host; expose via tunnel4"
 }
 
 output "mlflow_url" {
   value = "http://${var.compose_host}:5000"
+}
+
+output "prometheus_url" {
+  value = "http://${var.compose_host}:9090"
 }
 
 output "airflow_url" {

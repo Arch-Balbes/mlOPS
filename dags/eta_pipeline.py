@@ -6,7 +6,6 @@ import sys
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 
 # Project root on PYTHONPATH in Airflow container
@@ -68,6 +67,11 @@ def _gate_failed(**context):
     print("MAE gate failed: skipping deploy, keeping previous production model")
 
 
+def _ensure_schema(**context):
+    from src.db import init_schema
+    init_schema()
+
+
 with DAG(
     dag_id="eta_ml_pipeline",
     default_args=default_args,
@@ -89,12 +93,7 @@ with DAG(
     deploy = PythonOperator(task_id="deploy_canary", python_callable=_deploy)
     skip_deploy = PythonOperator(task_id="gate_failed_skip_deploy", python_callable=_gate_failed)
 
-    init_db = BashOperator(
-        task_id="ensure_schema",
-        bash_command=(
-            f'cd {PROJECT_ROOT} && python -c "from src.db import init_schema; init_schema()"'
-        ),
-    )
+    init_db = PythonOperator(task_id="ensure_schema", python_callable=_ensure_schema)
 
     init_db >> ingest >> etl >> features >> train >> gate_branch
     gate_branch >> [deploy, skip_deploy]

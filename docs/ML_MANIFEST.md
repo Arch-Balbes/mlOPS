@@ -35,23 +35,22 @@
 - MLflow: эксперименты и Model Registry (`Staging` -> `Production`)
 - Airflow DAG: ingest -> features -> train -> register -> deploy
 - Prometheus: latency, MAE rolling, счетчики предсказаний
-- IaC: Docker Compose + Terraform (опционально VM)
-- **Публичный сервинг:** хост разработчика, глобальный IPv6 `http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000` (см. [PUBLIC_ACCESS.md](PUBLIC_ACCESS.md))
+- Grafana: дашборды SLI/SLO
+- IaC: Docker Compose + Terraform (опционально)
+- **Внешний доступ:** только Grafana через tunnel4 (`localhost:3000`); API/MLflow/Airflow — localhost
 
-**Не входит:** оптимизация маршрутов курьеров, CV/трекинг посылок, динамическое ценообразование, ручная разметка.
-
-**Ограничения:** учебный стенд на синтетических данных; prod-поток эмулируется batch-джобой; клиенты без IPv6 используют резерв через ngrok.
+**Ограничения:** учебный стенд на синтетических данных; prod-поток эмулируется batch-джобой.
 
 ## 5. Осуществимость
 
-Реализуемо за 3-4 недели силами 1 ML-инженера и 0.5 DevOps. Стек: Python 3.11, PostgreSQL, MLflow, Airflow, FastAPI, Docker. Runtime развернут на домашнем ПК (Docker Compose / uvicorn), внешний доступ по IPv6; синтетический генератор заменяется подключением к DWH без смены контрактов таблиц.
+Реализуемо за 3-4 недели силами 1 ML-инженера и 1 DevOps. Стек: Python 3.11, PostgreSQL, MLflow, Airflow, FastAPI, Docker. Runtime на домашнем ПК (Docker Compose); синтетический генератор заменяется подключением к DWH без смены контрактов таблиц.
 
 ## 6. Данные
 
 | Назначение | Источник | Описание |
 |------------|----------|----------|
 | Обучение | `data/raw/*.parquet`, история 6-12 мес | orders, routes, delivery_events |
-| Прод / онлайн | PostgreSQL `eta_db` + API `http://[2a00:1370:8184:1c5d:e61b:c8fa:a5ca:aed5]:8000` | новые заказы + отложенные метки из `delivery_events` |
+| Прод / онлайн | PostgreSQL `eta_db` + API `http://localhost:8000` | новые заказы + отложенные метки из `delivery_events` |
 | Разметка | Автоматическая | label = `(delivered_at - order_created)` в минутах; классы не требуются (регрессия) |
 
 Таблицы: `orders`, `routes`, `delivery_events`, `features_eta`.
@@ -88,7 +87,7 @@
 | Роль | FTE |
 |------|-----|
 | ML Engineer | 1.0 |
-| DevOps | 0.5 |
+| DevOps | 1.0 |
 
 | Этап | Срок | Результат |
 |------|------|-----------|

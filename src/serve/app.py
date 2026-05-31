@@ -11,7 +11,14 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from src.config import ETA_PUBLIC_BASE_URL, FEATURE_COLUMNS
+from src.config import (
+    AIRFLOW_PUBLIC_URL,
+    ETA_PUBLIC_BASE_URL,
+    FEATURE_COLUMNS,
+    GRAFANA_PUBLIC_URL,
+    MLFLOW_PUBLIC_URL,
+    PROMETHEUS_PUBLIC_URL,
+)
 from src.db import get_engine
 from src.serve.model_loader import router
 
@@ -80,6 +87,10 @@ def health() -> dict:
         "public_base_url": ETA_PUBLIC_BASE_URL,
         "health_url": f"{ETA_PUBLIC_BASE_URL.rstrip('/')}/health",
         "predict_url": f"{ETA_PUBLIC_BASE_URL.rstrip('/')}/predict",
+        "mlflow_url": MLFLOW_PUBLIC_URL,
+        "prometheus_url": PROMETHEUS_PUBLIC_URL,
+        "grafana_url": GRAFANA_PUBLIC_URL,
+        "airflow_url": AIRFLOW_PUBLIC_URL,
     }
 
 

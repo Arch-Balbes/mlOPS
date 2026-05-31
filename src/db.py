@@ -21,18 +21,24 @@ def connection(engine: Engine | None = None) -> Generator:
         yield conn
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    return [s.strip() for s in sql.split(";") if s.strip() and not s.strip().startswith("--")]
+
+
 def init_schema(engine: Engine | None = None, sql_path: str | None = None) -> None:
+    """Apply table DDL to eta_db. Skips CREATE DATABASE (not allowed in a transaction)."""
     from src.config import ROOT_DIR
 
     eng = engine or get_engine()
     path = sql_path or str(ROOT_DIR / "infra" / "sql" / "init.sql")
     with open(path, encoding="utf-8") as f:
         sql = f.read()
-    with eng.begin() as conn:
-        for stmt in sql.split(";"):
-            s = stmt.strip()
-            if s:
-                conn.execute(text(s))
+
+    for stmt in _split_sql_statements(sql):
+        if stmt.upper().startswith("CREATE DATABASE"):
+            continue
+        with eng.begin() as conn:
+            conn.execute(text(stmt))
 
 
 def load_parquet_to_db(raw_dir: str | None = None) -> None:
